@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="auth-section">
+  <div class="container">
+    <div class="row justify-content-center align-items-center">
+      <div class="col-lg-6">
+        <div class="auth-card">
+          <div class="auth-header text-center">
+            <div class="auth-logo">PA</div>
+            <h1>Create Account</h1>
+            <p>Create your account to get started.</p>
+          </div>
+
+          <!-- Form -->
+          <form method="POST" class="auth-form">
+            {% csrf_token %}
+
+            {% for field in form %}
+              <div class="auth-group">
+                <label class="auth-label">
+                  {{ field.label }}
+                </label>
+                {{ field }}
+
+                {% if field.help_text %}
+                  <small class="auth-help">
+                    {{ field.help_text }}
+                  </small>
+                {% endif %}
+
+                {% if field.errors %}
+                  <div class="auth-error">
+                    {{ field.errors }}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+
+            <button type="submit" class="auth-btn">
+              Create Account
+            </button>
+          </form>
+
+          <div class="auth-footer text-center">
+            <p>Already have an account?</p>
+            <a href="/accounts/login/">Sign In</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
