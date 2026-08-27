@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -7,24 +8,56 @@ from django.views.decorators.http import require_http_methods
 
 from .forms import DiscoveryForm, UserPreferenceForm
 from .models import UserPreference
-from .place_service import LocalPlaceProvider, discover_places
+import os
 
-place_provider = LocalPlaceProvider()
+from .place_service import GeminiPlaceProvider, LocalPlaceProvider, discover_places
+from .recommendation_service import rank_recommendations
+from AI.ll_service import generate_general_summary
+
+local_place_provider = LocalPlaceProvider()
+place_provider = GeminiPlaceProvider(local_place_provider) if os.getenv('PLACES_PROVIDER') == 'gemini' else local_place_provider
 
 def home(request):
     form = DiscoveryForm(request.POST or None)
     places = []
+    summary = None
+    ai_status = None
+    map_data = None
     if request.method == 'POST' and form.is_valid():
         data = form.cleaned_data
-        places = discover_places(
-            place_provider,
+        preferences = getattr(request.user, 'preferences', None)
+        places = rank_recommendations(
+            place_provider.nearby(data['latitude'], data['longitude']),
             data['latitude'],
             data['longitude'],
+            preferences.interests if preferences else [],
             data['budget'],
             data['available_time_minutes'],
             data['category'],
         )
-    return render(request, 'core/home.html', {'form': form, 'places': places})
+        summary, ai_status = generate_general_summary(data, places)
+        map_data = {
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'places': places,
+            'iframe_url': 'https://www.openstreetmap.org/export/embed.html?' + urlencode({
+                'bbox': ','.join([
+                    str(data['longitude'] - 0.03),
+                    str(data['latitude'] - 0.03),
+                    str(data['longitude'] + 0.03),
+                    str(data['latitude'] + 0.03),
+                ]),
+                'layer': 'mapnik',
+                'marker': f"{data['latitude']},{data['longitude']}",
+            }),
+        }
+    return render(request, 'core/home.html', {
+        'form': form,
+        'places': places,
+        'summary': summary,
+        'ai_status': ai_status,
+        'map_data': map_data,
+    })
 
 
 def answer(request):
@@ -52,6 +85,33 @@ def nearby_places_api(request):
         data['category'],
     )
     return JsonResponse({'places': places})
+
+
+@login_required
+@require_http_methods(['POST'])
+def recommendations_api(request):
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Request body must be valid JSON.'}, status=400)
+
+    form = DiscoveryForm(payload)
+    if not form.is_valid():
+        return JsonResponse({'errors': form.errors.get_json_data()}, status=400)
+
+    data = form.cleaned_data
+    preferences, _ = UserPreference.objects.get_or_create(user=request.user)
+    recommendations = rank_recommendations(
+        place_provider.nearby(data['latitude'], data['longitude']),
+        data['latitude'],
+        data['longitude'],
+        preferences.interests,
+        data['budget'],
+        data['available_time_minutes'],
+        data['category'],
+    )
+    summary, ai_status = generate_general_summary(data, recommendations)
+    return JsonResponse({'recommendations': recommendations, 'ai_summary': summary, 'ai_status': ai_status})
 
 
 @login_required

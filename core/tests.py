@@ -5,6 +5,7 @@ from django.test import TestCase
 
 from .models import UserPreference
 from .place_service import LocalPlaceProvider, distance_km, resolve_location
+from .recommendation_service import rank_recommendations
 
 
 class UserPreferenceTests(TestCase):
@@ -69,6 +70,7 @@ class UserPreferenceTests(TestCase):
 class DiscoveryTests(TestCase):
 	def test_named_location_resolves_to_coordinates(self):
 		self.assertEqual(resolve_location('Nairobi CBD'), (-1.2833, 36.8167))
+		self.assertEqual(resolve_location('Kisumu'), (-0.1022, 34.7617))
 
 	def test_provider_returns_nearby_places_in_distance_order(self):
 		places = LocalPlaceProvider().nearby(-1.27, 36.82)
@@ -103,6 +105,15 @@ class DiscoveryTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, 'Nearby places')
+		self.assertContains(response, 'discovery-map')
+		self.assertContains(response, '"latitude": -1.2833')
+		self.assertContains(response, 'openstreetmap.org/export/embed.html')
+
+	def test_location_coordinates_are_manual_inputs(self):
+		response = self.client.get('/')
+
+		self.assertContains(response, 'name="latitude"')
+		self.assertContains(response, 'name="longitude"')
 
 	def test_nearby_places_api_supports_category_filter(self):
 		response = self.client.post('/api/places/nearby', data={
@@ -129,3 +140,46 @@ class DiscoveryTests(TestCase):
 		}, content_type='application/json')
 
 		self.assertEqual(response.status_code, 400)
+
+
+class RecommendationTests(TestCase):
+	def setUp(self):
+		self.user = User.objects.create_user(username='planner', password='test-pass-123')
+		UserPreference.objects.create(
+			user=self.user,
+			interests=['nature'],
+			budget_preference=3000,
+			available_time_minutes=240,
+		)
+
+	def test_interest_match_ranks_first(self):
+		recommendations = rank_recommendations(
+			LocalPlaceProvider().nearby(-1.27, 36.82),
+			-1.27,
+			36.82,
+			['nature'],
+			3000,
+			240,
+		)
+
+		self.assertTrue(recommendations)
+		self.assertEqual(recommendations[0]['category'], 'nature')
+		self.assertIn('matches your interest', recommendations[0]['reason'])
+
+	def test_recommendations_api_requires_login(self):
+		response = self.client.post('/api/recommendations', data={}, content_type='application/json')
+
+		self.assertEqual(response.status_code, 302)
+
+	def test_recommendations_api_returns_scored_places(self):
+		self.client.login(username='planner', password='test-pass-123')
+		response = self.client.post('/api/recommendations', data={
+			'location_name': 'Nairobi CBD',
+			'budget': 3000,
+			'available_time_minutes': 240,
+			'category': '',
+		}, content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['recommendations'])
+		self.assertIn('recommendation_score', response.json()['recommendations'][0])

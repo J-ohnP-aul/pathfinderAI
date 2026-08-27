@@ -17,6 +17,9 @@
     </div>
     {{ form.latitude }}
     {{ form.longitude }}
+    <div class="coordinate-help">
+      <small>Or enter both coordinates manually if location access is unavailable.</small>
+    </div>
     {% for field in form %}
       {% if field.name != 'location_name' and field.name != 'latitude' and field.name != 'longitude' %}
         <div class="form-group">
@@ -29,6 +32,20 @@
     <button type="submit">Find places</button>
   </form>
 
+  {% if map_data %}
+    <section class="map-section" aria-labelledby="map-heading">
+      <h2 id="map-heading">Map</h2>
+      <iframe
+        id="discovery-map"
+        src="{{ map_data.iframe_url }}"
+        title="Map showing your selected location"
+        loading="lazy"
+        referrerpolicy="no-referrer-when-downgrade">
+      </iframe>
+    </section>
+    {{ map_data|json_script:'map-data' }}
+  {% endif %}
+
   {% if form.is_bound and not places %}
     <p>No matching places were found. Try a larger budget, more time, or a different category.</p>
   {% endif %}
@@ -36,10 +53,14 @@
   {% if places %}
     <section aria-labelledby="results-heading">
       <h2 id="results-heading">Nearby places</h2>
+      {% if summary %}<p>{{ summary }}</p>{% endif %}
+      {% if ai_status %}<p>{{ ai_status }}</p>{% endif %}
       {% for place in places %}
         <article>
           <h3>{{ place.name }}</h3>
           <p>{{ place.description }}</p>
+          <p>Recommendation score: {{ place.recommendation_score }}%</p>
+          <p>{{ place.reason }}</p>
           <p>{{ place.distance_km }} km away | KSh {{ place.estimated_cost }} | {{ place.visit_duration_minutes }} minutes</p>
           <p>{{ place.address }} | {{ place.opening_info }}</p>
         </article>
@@ -56,14 +77,29 @@
       locationStatus.textContent = 'Geolocation is unavailable. Enter coordinates manually.';
       return;
     }
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      locationStatus.textContent = 'Location requires HTTPS or localhost. Enter coordinates manually.';
+      return;
+    }
+    locationButton.disabled = true;
     locationStatus.textContent = 'Requesting your location...';
-    navigator.geolocation.getCurrentPosition((position) => {
-      document.getElementById('id_latitude').value = position.coords.latitude;
-      document.getElementById('id_longitude').value = position.coords.longitude;
-      locationStatus.textContent = 'Location added.';
-    }, () => {
-      locationStatus.textContent = 'Location permission was denied. Enter coordinates manually.';
-    });
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        document.getElementById('id_latitude').value = position.coords.latitude;
+        document.getElementById('id_longitude').value = position.coords.longitude;
+        document.getElementById('id_location_name').value = 'Current location';
+        locationStatus.textContent = 'Location found. Finding places...';
+        document.getElementById('discovery-form').requestSubmit();
+      },
+      (error) => {
+        locationButton.disabled = false;
+        const message = error.code === error.PERMISSION_DENIED
+          ? 'Location permission was denied. Enter coordinates manually.'
+          : 'Could not determine your location. Check browser permissions or enter coordinates manually.';
+        locationStatus.textContent = message;
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
   });
 </script>
 {% endblock %}

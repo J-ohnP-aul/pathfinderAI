@@ -1,0 +1,18 @@
+.map-section {
+	margin: 2rem 0;
+}
+
+#discovery-map {
+	width: min(100%, 520px);
+	aspect-ratio: 1 / 1;
+	height: auto;
+	border: 1px solid #d1d5db;
+	margin: 0 auto;
+	display: block;
+}
+
+@media (max-width: 600px) {
+	#discovery-map {
+		width: 100%;
+	}
+}
