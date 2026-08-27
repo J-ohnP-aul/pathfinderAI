@@ -1,13 +1,11 @@
-{% load bootstrap3 %}
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>pathfinder AI</title>
-    {% bootstrap_css %}
-    {% bootstrap_javascript %}
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
   </head>
   <body>
     <nav class="navbar navbar-default navbar-static-top">
@@ -27,6 +25,7 @@
         <ul class="nav navbar-nav navbar-right">
           {% if user.is_authenticated %}
             <li><a>Hello, {{ user.username }}.</a></li>
+            <li><a href="{% url 'core:profile-preferences' %}">Preferences</a></li>
             <li><a href="{% url 'accounts:logout' %}">log out</a></li>
           {% else %}
             <li><a href="{% url 'accounts:register' %}">register</a></li>

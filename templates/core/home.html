@@ -1,6 +1,69 @@
 {% extends 'base.html' %}
-{% load bootstrap3 %}
 
 {% block content %}
-  <p>this is home page</p>
+<main class="discover-page">
+  <h1>Where should you go right now?</h1>
+  <p>Set a location, time, and budget to find nearby places.</p>
+
+  <form method="post" id="discovery-form">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="form-group">
+      {{ form.location_name.label_tag }}
+      {{ form.location_name }}
+      <small>{{ form.location_name.help_text }}</small>
+      <button type="button" id="use-location">Use my location</button>
+      <small id="location-status">Location permission is optional.</small>
+    </div>
+    {{ form.latitude }}
+    {{ form.longitude }}
+    {% for field in form %}
+      {% if field.name != 'location_name' and field.name != 'latitude' and field.name != 'longitude' %}
+        <div class="form-group">
+          {{ field.label_tag }}
+          {{ field }}
+          {{ field.errors }}
+        </div>
+      {% endif %}
+    {% endfor %}
+    <button type="submit">Find places</button>
+  </form>
+
+  {% if form.is_bound and not places %}
+    <p>No matching places were found. Try a larger budget, more time, or a different category.</p>
+  {% endif %}
+
+  {% if places %}
+    <section aria-labelledby="results-heading">
+      <h2 id="results-heading">Nearby places</h2>
+      {% for place in places %}
+        <article>
+          <h3>{{ place.name }}</h3>
+          <p>{{ place.description }}</p>
+          <p>{{ place.distance_km }} km away | KSh {{ place.estimated_cost }} | {{ place.visit_duration_minutes }} minutes</p>
+          <p>{{ place.address }} | {{ place.opening_info }}</p>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+</main>
+
+<script>
+  const locationButton = document.getElementById('use-location');
+  const locationStatus = document.getElementById('location-status');
+  locationButton.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      locationStatus.textContent = 'Geolocation is unavailable. Enter coordinates manually.';
+      return;
+    }
+    locationStatus.textContent = 'Requesting your location...';
+    navigator.geolocation.getCurrentPosition((position) => {
+      document.getElementById('id_latitude').value = position.coords.latitude;
+      document.getElementById('id_longitude').value = position.coords.longitude;
+      locationStatus.textContent = 'Location added.';
+    }, () => {
+      locationStatus.textContent = 'Location permission was denied. Enter coordinates manually.';
+    });
+  });
+</script>
 {% endblock %}
