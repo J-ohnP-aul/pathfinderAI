@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: pathfinder-ai
+    runtime: python
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "pathfinder-ai.onrender.com"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: "gemini-1.5-flash"
+      # PLACES_PROVIDER=gemini is used in production since Ollama requires a separate service
+      # For Ollama, deploy it separately (Railway, Fly.io, VPS) and set OLLAMA_URL
+      - key: PLACES_PROVIDER
+        value: "gemini"
+      - key: LLM_PROVIDER
+        value: "gemini"
+      - key: OSM_USER_AGENT
+        value: "PathfinderAI/1.0"
+    healthCheckPath: /
+    autoDeploy: true
+
+  - type: pserv
+    name: pathfinder-db
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pathfinder-db
+          property: connectionString
+
+databases:
+  - name: pathfinder-db
+    plan: free
+    databaseName: pathfinder
+    user: pathfinder_user
