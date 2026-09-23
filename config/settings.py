@@ -33,7 +33,13 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-jb06om%p^zyr75ry4=_mo%p46o
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'testserver,localhost,127.0.0.1').split(',')
+def _allowed_hosts():
+    hosts = os.getenv('ALLOWED_HOSTS', 'testserver,localhost,127.0.0.1').split(',')
+    # Allow all render.com subdomains for health checks
+    hosts.extend(['.onrender.com'])
+    return hosts
+
+ALLOWED_HOSTS = _allowed_hosts()
 
 
 # Application definition
