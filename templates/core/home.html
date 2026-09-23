@@ -1,18 +1,29 @@
 {% extends 'base.html' %}
 
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+{% endblock %}
+
 {% block content %}
 <main class="discover-page">
-  <h1>Where should you go right now?</h1>
-  <p>Set a location, time, and budget to find nearby places.</p>
+  <header class="discover-intro">
+    <p class="eyebrow">01 / Route intelligence</p>
+    <h1>Make a move.</h1>
+    <p class="lede">Tell Pathfinder where you are and what you have to work with. We will return a short list of places worth the trip.</p>
+  </header>
 
-  <form method="post" id="discovery-form">
+  <section class="panel search-panel" aria-labelledby="search-heading">
+    <span class="panel-label" id="search-heading">Build your brief</span>
+    <form method="post" id="discovery-form">
     {% csrf_token %}
     {{ form.non_field_errors }}
     <div class="form-group">
       {{ form.location_name.label_tag }}
-      {{ form.location_name }}
+      <div class="location-row">
+        {{ form.location_name }}
+        <button type="button" id="use-location">Use GPS</button>
+      </div>
       <small>{{ form.location_name.help_text }}</small>
-      <button type="button" id="use-location">Use my location</button>
       <small id="location-status">Location permission is optional. It works on localhost or over HTTPS.</small>
     </div>
     {{ form.latitude }}
@@ -29,46 +40,40 @@
         </div>
       {% endif %}
     {% endfor %}
-    <button type="submit">Find places</button>
-  </form>
+    <button class="primary-action" type="submit">Find places &rarr;</button>
+    </form>
+  </section>
 
-  {% if map_data %}
-    <section class="map-section" aria-labelledby="map-heading">
-      <h2 id="map-heading">Map</h2>
-      <iframe
-        id="discovery-map"
-        src="{{ map_data.iframe_url }}"
-        title="Map showing your selected location"
-        loading="lazy"
-        referrerpolicy="no-referrer-when-downgrade">
-      </iframe>
-    </section>
-    {{ map_data|json_script:'map-data' }}
-  {% endif %}
+  <section class="results-panel" aria-labelledby="results-heading">
+    <div class="results-heading">
+      <h2 id="results-heading">Your route</h2>
+      {% if places %}<p>{{ places|length }} signal{{ places|length|pluralize }} found</p>{% endif %}
+    </div>
+    <div id="current-location-map" style="display: none;"></div>
 
-  {% if form.is_bound and not places %}
-    <p>No matching places were found. Try a larger budget, more time, or a different category.</p>
-  {% endif %}
+    {% if form.is_bound and not places %}
+      <p class="empty-state">No matching places were found. Try a larger budget, more time, or a different category.</p>
+    {% endif %}
 
-  {% if places %}
-    <section aria-labelledby="results-heading">
-      <h2 id="results-heading">Nearby places</h2>
-      {% if summary %}<p>{{ summary }}</p>{% endif %}
-      {% if ai_status %}<p>{{ ai_status }}</p>{% endif %}
+    {% if places %}
+      {% if summary %}<p class="summary">{{ summary }}</p>{% endif %}
+      {% if ai_status %}<small>{{ ai_status }}</small>{% endif %}
+      <div class="place-list">
       {% for place in places %}
-        <article>
-          <h3>{{ place.name }}</h3>
+        <article class="place-card">
+          <header><h3>{{ place.name }}</h3><span class="score">{{ place.recommendation_score }}% match</span></header>
           <p>{{ place.description }}</p>
-          <p>Recommendation score: {{ place.recommendation_score }}%</p>
           <p>{{ place.reason }}</p>
-          <p>{{ place.distance_km }} km away | KSh {{ place.estimated_cost }} | {{ place.visit_duration_minutes }} minutes</p>
-          <p>{{ place.address }} | {{ place.opening_info }}</p>
+          <p class="place-meta">{{ place.distance_km }} km away / KSh {{ place.estimated_cost }} / {{ place.visit_duration_minutes }} min</p>
+          <p class="place-meta">{{ place.address }} / {{ place.opening_info }}</p>
         </article>
       {% endfor %}
-    </section>
-  {% endif %}
+      </div>
+    {% endif %}
+  </section>
 </main>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
   const locationButton = document.getElementById('use-location');
   const locationStatus = document.getElementById('location-status');
@@ -76,6 +81,57 @@
   const longitudeInput = document.getElementById('id_longitude');
   const locationNameInput = document.getElementById('id_location_name');
   const form = document.getElementById('discovery-form');
+  const mapContainer = document.getElementById('current-location-map');
+  let currentMap = null;
+  let currentMarker = null;
+  let placeMarkers = [];
+
+  function initLeafletMap(latitude = -1.2833, longitude = 36.8167) {
+    if (!mapContainer || typeof L === 'undefined') {
+      return;
+    }
+
+    mapContainer.style.display = 'block';
+    currentMap = L.map('current-location-map').setView([latitude, longitude], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(currentMap);
+    currentMarker = L.marker([latitude, longitude]).addTo(currentMap);
+  }
+
+  function updateLeafletMap(latitude, longitude) {
+    if (!currentMap) {
+      initLeafletMap(latitude, longitude);
+      return;
+    }
+    currentMap.setView([latitude, longitude], 13);
+    if (currentMarker) {
+      currentMarker.setLatLng([latitude, longitude]);
+    } else {
+      currentMarker = L.marker([latitude, longitude]).addTo(currentMap);
+    }
+  }
+
+  function addPlaceMarkers(places) {
+    if (!currentMap) return;
+    
+    placeMarkers.forEach(marker => currentMap.removeLayer(marker));
+    placeMarkers = [];
+
+    places.forEach(place => {
+      if (place.latitude && place.longitude) {
+        const marker = L.marker([place.latitude, place.longitude])
+          .addTo(currentMap)
+          .bindPopup(`<b>${place.name}</b><br>${place.address || ''}<br>Score: ${place.recommendation_score}%`);
+        placeMarkers.push(marker);
+      }
+    });
+
+    if (placeMarkers.length > 0) {
+      const group = new L.featureGroup([currentMarker, ...placeMarkers]);
+      currentMap.fitBounds(group.getBounds().pad(0.1));
+    }
+  }
 
   async function locationPermissionState() {
     if (!navigator.permissions?.query) return null;
@@ -91,45 +147,27 @@
     return window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   }
 
-  function tryIpGeolocation() {
-    locationStatus.textContent = 'Trying IP-based location...';
-    fetch('{% url "core:ip-geolocation-api" %}')
-      .then(response => response.json())
-      .then(data => {
-        if (data.latitude && data.longitude) {
-          latitudeInput.value = data.latitude;
-          longitudeInput.value = data.longitude;
-          locationNameInput.value = 'Approximate location (via IP)';
-          locationStatus.textContent = 'Approximate location found. Finding places...';
-          form.requestSubmit();
-        } else {
-          throw new Error(data.error || 'No location data');
-        }
-      })
-      .catch(() => {
-        locationButton.disabled = false;
-        locationStatus.textContent = 'Could not determine location automatically. Please enter a place name or coordinates manually.';
-      });
-  }
-
   locationButton.addEventListener('click', () => {
     if (!navigator.geolocation) {
-      locationStatus.textContent = 'Geolocation is unavailable. Trying IP-based fallback...';
-      tryIpGeolocation();
+      locationStatus.textContent = 'Geolocation is unavailable in this browser. Please enter a place name or coordinates manually.';
+      locationButton.disabled = false;
       return;
     }
     if (!isSecureContext()) {
-      locationStatus.textContent = 'Secure context required for precise location. Trying IP-based fallback...';
-      tryIpGeolocation();
+      locationStatus.textContent = 'Use HTTPS or localhost and allow location access. Otherwise, enter a place name or coordinates manually.';
+      locationButton.disabled = false;
       return;
     }
     locationButton.disabled = true;
     locationStatus.textContent = 'Requesting your location...';
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        latitudeInput.value = position.coords.latitude;
-        longitudeInput.value = position.coords.longitude;
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        latitudeInput.value = latitude;
+        longitudeInput.value = longitude;
         locationNameInput.value = 'Current location';
+        updateLeafletMap(latitude, longitude);
         locationStatus.textContent = 'Location found. Finding places...';
         form.requestSubmit();
       },
@@ -139,28 +177,37 @@
         if (error.code === error.PERMISSION_DENIED) {
           const permissionState = await locationPermissionState();
           if (permissionState === 'denied') {
-            message = 'Location permission denied. Trying IP-based fallback...';
+            message = 'Location permission denied. Please allow access or enter a place name and coordinates manually.';
           } else {
-            message = 'Browser blocked location. Trying IP-based fallback...';
+            message = 'Browser blocked location. Please allow access or enter a place name and coordinates manually.';
           }
           locationStatus.textContent = message;
-          tryIpGeolocation();
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          message = 'Position unavailable. Trying IP-based fallback...';
+          message = 'Position unavailable. Please try again or enter a place name and coordinates manually.';
           locationStatus.textContent = message;
-          tryIpGeolocation();
         } else if (error.code === error.TIMEOUT) {
-          message = 'Location request timed out. Trying IP-based fallback...';
+          message = 'Location request timed out. Please try again or enter a place name and coordinates manually.';
           locationStatus.textContent = message;
-          tryIpGeolocation();
         } else {
-          message = 'Location error. Trying IP-based fallback...';
+          message = 'Location error. Please try again or enter a place name and coordinates manually.';
           locationStatus.textContent = message;
-          tryIpGeolocation();
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
     );
   });
+
+  const currentLatitude = parseFloat(latitudeInput.value || '');
+  const currentLongitude = parseFloat(longitudeInput.value || '');
+  if (!Number.isNaN(currentLatitude) && !Number.isNaN(currentLongitude)) {
+    initLeafletMap(currentLatitude, currentLongitude);
+  }
+
+  {% if places %}
+    const placesData = {{ places|safe }};
+    if (placesData.length > 0 && currentLatitude && currentLongitude) {
+      setTimeout(() => addPlaceMarkers(placesData), 100);
+    }
+  {% endif %}
 </script>
 {% endblock %}

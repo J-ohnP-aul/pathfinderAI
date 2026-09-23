@@ -119,6 +119,25 @@ class DiscoveryTests(TestCase):
 		self.assertContains(response, 'name="latitude"')
 		self.assertContains(response, 'name="longitude"')
 
+	def test_home_uses_leaflet_for_current_location(self):
+		response = self.client.get('/')
+
+		self.assertContains(response, 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css')
+		self.assertContains(response, 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js')
+		self.assertContains(response, 'id="current-location-map"')
+		self.assertContains(response, 'navigator.geolocation.getCurrentPosition')
+
+	def test_current_location_requires_browser_coordinates(self):
+		response = self.client.post('/', {
+			'location_name': 'Current location',
+			'budget': '3000',
+			'available_time_minutes': '240',
+			'category': '',
+		})
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'We need your device location before searching')
+
 	def test_nearby_places_api_supports_category_filter(self):
 		response = self.client.post('/api/places/nearby', data={
 			'location_name': 'Nairobi',

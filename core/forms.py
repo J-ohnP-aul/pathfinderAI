@@ -35,7 +35,10 @@ class DiscoveryForm(forms.Form):
         if latitude is not None and longitude is not None:
             return cleaned_data
 
-        if location_name and location_name.lower() != 'current location':
+        if location_name and location_name.lower() == 'current location':
+            return cleaned_data
+
+        if location_name:
             coordinates = resolve_location(location_name)
             if coordinates:
                 cleaned_data['latitude'], cleaned_data['longitude'] = coordinates

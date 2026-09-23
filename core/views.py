@@ -30,21 +30,7 @@ def home(request):
 
         if latitude is None or longitude is None:
             if location_name.lower() == 'current location':
-                ip_lat, ip_lon = geocode_ip_location()
-                if ip_lat is not None and ip_lon is not None:
-                    latitude, longitude = ip_lat, ip_lon
-                    data['latitude'], data['longitude'] = latitude, longitude
-                else:
-                    form.add_error(None, 'Could not determine your location. Please enter a place name or coordinates manually.')
-                    return render(request, 'core/home.html', {
-                        'form': form,
-                        'places': places,
-                        'summary': summary,
-                        'ai_status': ai_status,
-                        'map_data': map_data,
-                    })
-            else:
-                form.add_error(None, 'Enter a place name, use "Use my location", or enter both latitude and longitude.')
+                form.add_error(None, 'We need your device location before searching. Please allow location access in the browser or enter latitude and longitude manually.')
                 return render(request, 'core/home.html', {
                     'form': form,
                     'places': places,
@@ -52,6 +38,14 @@ def home(request):
                     'ai_status': ai_status,
                     'map_data': map_data,
                 })
+            form.add_error(None, 'Enter a place name, use "Use my location", or enter both latitude and longitude.')
+            return render(request, 'core/home.html', {
+                'form': form,
+                'places': places,
+                'summary': summary,
+                'ai_status': ai_status,
+                'map_data': map_data,
+            })
 
         preferences = getattr(request.user, 'preferences', None)
         places = rank_recommendations(
