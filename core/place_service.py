@@ -125,11 +125,48 @@ class LocalPlaceProvider:
         return sorted(results, key=lambda place: distance_km(latitude, longitude, place.latitude, place.longitude))
 
 
+class OpenStreetMapPlaceProvider:
+    """Fetch nearby mapped places from the free Overpass API."""
+
+    def __init__(self, fallback: PlaceProvider | None = None):
+        self.fallback = fallback or LocalPlaceProvider()
+
+    def nearby(self, latitude: float, longitude: float, radius_km: float = 15) -> list[Place]:
+        radius_m = min(int(radius_km * 1000), 25000)
+        query = f'''[out:json][timeout:10];(
+          nwr(around:{radius_m},{latitude},{longitude})[amenity~"restaurant|cafe|fast_food|pub|bar|cinema|theatre|arts_centre|museum"];
+          nwr(around:{radius_m},{latitude},{longitude})[tourism~"attraction|museum|gallery|hotel|viewpoint"];
+          nwr(around:{radius_m},{latitude},{longitude})[leisure~"park|garden|nature_reserve|sports_centre"];
+          nwr(around:{radius_m},{latitude},{longitude})[shop];
+        );out center tags;'''
+        request = Request(
+            'https://overpass-api.de/api/interpreter',
+            data=query.encode(),
+            headers={'User-Agent': os.getenv('OSM_USER_AGENT', 'PathfinderAI/1.0')},
+        )
+        try:
+            with urlopen(request, timeout=15) as response:
+                elements = json.load(response).get('elements', [])
+            places = [place_from_osm_data(item) for item in elements]
+            places = [
+                place for place in places
+                if place is not None
+                and distance_km(latitude, longitude, place.latitude, place.longitude) <= radius_km
+            ]
+            if places:
+                return sorted(places, key=lambda place: distance_km(
+                    latitude, longitude, place.latitude, place.longitude,
+                ))
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return self.fallback.nearby(latitude, longitude, radius_km)
+
+
 class GeminiPlaceProvider:
     """Use Gemini for live place suggestions, with a local fallback."""
 
     def __init__(self, fallback: PlaceProvider | None = None):
-        self.fallback = fallback or LocalPlaceProvider()
+        self.fallback = fallback or OpenStreetMapPlaceProvider()
 
     def nearby(self, latitude: float, longitude: float, radius_km: float = 15) -> list[Place]:
         api_key = os.getenv('GEMINI_API_KEY')
@@ -217,6 +254,42 @@ def place_from_ai_data(data: dict) -> Place | None:
         return None
 
 
+def place_from_osm_data(data: dict) -> Place | None:
+    tags = data.get('tags', {})
+    coordinates = data.get('center', data)
+    name = tags.get('name')
+    if not name or 'lat' not in coordinates or 'lon' not in coordinates:
+        return None
+    category = osm_category(tags)
+    return Place(
+        id=f"osm-{data.get('type', 'place')}-{data.get('id')}",
+        name=name,
+        category=category,
+        latitude=float(coordinates['lat']),
+        longitude=float(coordinates['lon']),
+        address=', '.join(value for value in [tags.get('addr:street'), tags.get('addr:city')] if value),
+        description=f'{name} in the selected area.',
+        estimated_cost=0,
+        visit_duration_minutes=60,
+        rating=0,
+        opening_info=tags.get('opening_hours', 'Opening hours not available'),
+    )
+
+
+def osm_category(tags: dict) -> str:
+    if tags.get('amenity') in {'restaurant', 'cafe', 'fast_food'}:
+        return 'food'
+    if tags.get('amenity') in {'pub', 'bar'}:
+        return 'nightlife'
+    if tags.get('amenity') in {'museum', 'theatre', 'arts_centre'} or tags.get('tourism') in {'museum', 'gallery'}:
+        return 'history'
+    if tags.get('shop'):
+        return 'shopping'
+    if tags.get('leisure') in {'park', 'garden', 'nature_reserve'}:
+        return 'nature'
+    return 'adventure'
+
+
 KNOWN_LOCATIONS = {
     'nairobi cbd': (-1.2833, 36.8167),
     'nairobi city centre': (-1.2833, 36.8167),
@@ -263,6 +336,22 @@ def geocode_kenyan_location(location_name: str) -> tuple[float | None, float | N
         return float(results[0]['lat']), float(results[0]['lon'])
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None, None
+
+
+def geocode_ip_location() -> tuple[float | None, float | None]:
+    """Resolve approximate location from IP address using ip-api.com."""
+    request = Request(
+        'http://ip-api.com/json/',
+        headers={'User-Agent': os.getenv('OSM_USER_AGENT', 'PathfinderAI/1.0')},
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            data = json.load(response)
+        if data.get('status') == 'success' and data.get('lat') and data.get('lon'):
+            return float(data['lat']), float(data['lon'])
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return None, None
 
 
 def distance_km(latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float) -> float:

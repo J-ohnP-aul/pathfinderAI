@@ -52,7 +52,9 @@ def build_reason(place: Place, distance: float, interest_score: float,
     if interest_score == 1:
         reasons.append(f'it matches your interest in {place.category}')
     elif interest_score == 0.5:
-        reasons.append('it is a good nearby option')
+        reasons.append(f'it is a good nearby {place.category} option')
+    else:
+        reasons.append(f'it is a nearby {place.category} option')
     if place.estimated_cost <= budget:
         reasons.append('it fits your budget')
     if place.visit_duration_minutes <= available_time_minutes:

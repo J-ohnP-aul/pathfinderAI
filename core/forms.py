@@ -31,15 +31,18 @@ class DiscoveryForm(forms.Form):
         latitude = cleaned_data.get('latitude')
         longitude = cleaned_data.get('longitude')
         location_name = cleaned_data.get('location_name', '').strip()
-        if latitude is None and longitude is None and location_name and location_name.lower() != 'current location':
+
+        if latitude is not None and longitude is not None:
+            return cleaned_data
+
+        if location_name and location_name.lower() != 'current location':
             coordinates = resolve_location(location_name)
             if coordinates:
                 cleaned_data['latitude'], cleaned_data['longitude'] = coordinates
-            else:
-                raise forms.ValidationError('We could not find that place. Try Nairobi CBD or enter latitude and longitude.')
-        elif latitude is None or longitude is None:
-            raise forms.ValidationError('Enter a place name or both latitude and longitude.')
-        return cleaned_data
+                return cleaned_data
+            raise forms.ValidationError('We could not find that place. Try Nairobi CBD or enter latitude and longitude.')
+
+        raise forms.ValidationError('Enter a place name, use "Use my location", or enter both latitude and longitude.')
 
 
 class UserPreferenceForm(forms.ModelForm):

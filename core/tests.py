@@ -3,6 +3,7 @@ import json
 from django.contrib.auth.models import User
 from django.test import TestCase
 
+from . import views
 from .models import UserPreference
 from .place_service import LocalPlaceProvider, distance_km, resolve_location
 from .recommendation_service import rank_recommendations
@@ -68,6 +69,9 @@ class UserPreferenceTests(TestCase):
 
 
 class DiscoveryTests(TestCase):
+	def setUp(self):
+		views.place_provider = LocalPlaceProvider()
+
 	def test_named_location_resolves_to_coordinates(self):
 		self.assertEqual(resolve_location('Nairobi CBD'), (-1.2833, 36.8167))
 		self.assertEqual(resolve_location('Kisumu'), (-0.1022, 34.7617))
@@ -92,7 +96,7 @@ class DiscoveryTests(TestCase):
 		})
 
 		self.assertEqual(response.status_code, 200)
-		self.assertContains(response, 'Nairobi Arboretum')
+		self.assertContains(response, 'August 7th Memorial Park')
 		self.assertNotContains(response, 'Westlands Food Market')
 
 	def test_home_accepts_named_location_without_coordinates(self):
@@ -144,6 +148,7 @@ class DiscoveryTests(TestCase):
 
 class RecommendationTests(TestCase):
 	def setUp(self):
+		views.place_provider = LocalPlaceProvider()
 		self.user = User.objects.create_user(username='planner', password='test-pass-123')
 		UserPreference.objects.create(
 			user=self.user,
