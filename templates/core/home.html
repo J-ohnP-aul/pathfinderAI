@@ -46,10 +46,14 @@
 
   <section class="results-panel" aria-labelledby="results-heading">
     <div class="results-heading">
-      <h2 id="results-heading">Your route</h2>
+      <h2 id="results-heading">Nearby places</h2>
       {% if places %}<p>{{ places|length }} signal{{ places|length|pluralize }} found</p>{% endif %}
     </div>
-    <div id="current-location-map" style="display: none;"></div>
+    <div id="current-location-map" class="discovery-map" style="display: none;"></div>
+    {% if map_data %}
+      {{ map_data|json_script:"discovery-map-data" }}
+      <a class="map-data-link" href="{{ map_data.iframe_url }}">Open map data</a>
+    {% endif %}
 
     {% if form.is_bound and not places %}
       <p class="empty-state">No matching places were found. Try a larger budget, more time, or a different category.</p>
@@ -120,7 +124,14 @@
 
     places.forEach(place => {
       if (place.latitude && place.longitude) {
-        const marker = L.marker([place.latitude, place.longitude])
+        const labelIcon = L.divIcon({
+          className: 'place-label-marker',
+          html: `<div class="place-marker-label">${place.name}</div>`,
+          iconSize: [140, 30],
+          iconAnchor: [70, 15],
+        });
+        
+        const marker = L.marker([place.latitude, place.longitude], { icon: labelIcon })
           .addTo(currentMap)
           .bindPopup(`<b>${place.name}</b><br>${place.address || ''}<br>Score: ${place.recommendation_score}%`);
         placeMarkers.push(marker);
@@ -197,17 +208,17 @@
     );
   });
 
-  const currentLatitude = parseFloat(latitudeInput.value || '');
-  const currentLongitude = parseFloat(longitudeInput.value || '');
+  const mapDataElement = document.getElementById('discovery-map-data');
+  const mapData = mapDataElement ? JSON.parse(mapDataElement.textContent) : null;
+  const currentLatitude = parseFloat(latitudeInput.value || mapData?.latitude || '');
+  const currentLongitude = parseFloat(longitudeInput.value || mapData?.longitude || '');
   if (!Number.isNaN(currentLatitude) && !Number.isNaN(currentLongitude)) {
     initLeafletMap(currentLatitude, currentLongitude);
   }
 
-  {% if places %}
-    const placesData = {{ places|safe }};
-    if (placesData.length > 0 && currentLatitude && currentLongitude) {
-      setTimeout(() => addPlaceMarkers(placesData), 100);
-    }
-  {% endif %}
+  const placesData = mapData?.places || [];
+  if (placesData.length > 0 && !Number.isNaN(currentLatitude) && !Number.isNaN(currentLongitude)) {
+    setTimeout(() => addPlaceMarkers(placesData), 100);
+  }
 </script>
 {% endblock %}

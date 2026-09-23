@@ -162,6 +162,60 @@ class OpenStreetMapPlaceProvider:
         return self.fallback.nearby(latitude, longitude, radius_km)
 
 
+class OllamaPlaceProvider:
+    """Use Ollama for live place suggestions, with a local fallback."""
+
+    def __init__(self, fallback: PlaceProvider | None = None):
+        self.fallback = fallback or OpenStreetMapPlaceProvider()
+
+    def nearby(self, latitude: float, longitude: float, radius_km: float = 15) -> list[Place]:
+        model_name = os.getenv('OLLAMA_MODEL', 'llama3.2:latest')
+        ollama_url = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434/api/generate')
+
+        prompt = (
+            'Return real places near the supplied coordinates. Use only places that are '
+            'likely to exist, and return valid JSON only as an array of objects. '
+            'Each object must contain: id, name, category, latitude, longitude, address, '
+            'description, estimated_cost (integer KSh), visit_duration_minutes (integer), '
+            'rating (number from 0 to 5), and opening_info. '
+            f'Coordinates: {latitude}, {longitude}. Radius: {radius_km} km. '
+            'Include up to 20 varied food, nature, history, culture, adventure, nightlife, '
+            'shopping, and relaxation places.'
+        )
+
+        payload = json.dumps({
+            'model': model_name,
+            'prompt': prompt,
+            'stream': False,
+            'options': {'temperature': 0.1},
+        }).encode()
+
+        request = Request(
+            ollama_url,
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+        )
+
+        try:
+            with urlopen(request, timeout=30) as response:
+                result = json.load(response)
+            text = result.get('response', '').strip()
+            if text:
+                places = json.loads(text)
+                parsed_places = [place_from_ai_data(item) for item in places]
+                parsed_places = [
+                    place for place in parsed_places
+                    if place is not None
+                    and distance_km(latitude, longitude, place.latitude, place.longitude) <= radius_km
+                ]
+                if parsed_places:
+                    return parsed_places
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            pass
+
+        return self.fallback.nearby(latitude, longitude, radius_km)
+
+
 class GeminiPlaceProvider:
     """Use Gemini for live place suggestions, with a local fallback."""
 

@@ -10,11 +10,17 @@ from .forms import DiscoveryForm, UserPreferenceForm
 from .models import UserPreference
 import os
 
-from .place_service import GeminiPlaceProvider, LocalPlaceProvider, discover_places, geocode_ip_location, PlaceProvider
+from .place_service import GeminiPlaceProvider, OllamaPlaceProvider, LocalPlaceProvider, discover_places, geocode_ip_location, PlaceProvider
 from .recommendation_service import rank_recommendations
 from AI.ll_service import generate_general_summary
 
-place_provider = GeminiPlaceProvider() if os.getenv('PLACES_PROVIDER') == 'gemini' else LocalPlaceProvider()
+provider_name = os.getenv('PLACES_PROVIDER', 'local').lower()
+if provider_name == 'gemini':
+    place_provider = GeminiPlaceProvider()
+elif provider_name == 'ollama':
+    place_provider = OllamaPlaceProvider()
+else:
+    place_provider = LocalPlaceProvider()
 
 def home(request):
     form = DiscoveryForm(request.POST or None)
